@@ -23,3 +23,12 @@ jobs:
       - name: Push changes
         if: env.PKG_UPDATED == '1'
         run: git push
+      - name: Publish to AUR
+        if: env.PKG_UPDATED == '1'
+        uses: KSXGitHub/github-actions-deploy-aur@v2.7.0
+        with:
+          pkgname: iipython-feishin-electron-bin
+          pkgbuild: ./PKGBUILD
+          commit_username: github-actions[bot]
+          commit_email: github-actions[bot]@users.noreply.github.com
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
