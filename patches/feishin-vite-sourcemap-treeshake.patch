@@ -1,0 +1,33 @@
+diff --git a/electron.vite.config.ts b/electron.vite.config.ts
+--- a/electron.vite.config.ts
++++ b/electron.vite.config.ts
+@@
+     main: {
+         build: {
+             rollupOptions: {
+                 external: ['source-map-support'],
+             },
+-            sourcemap: true,
++            sourcemap: false,
+         },
+@@
+     preload: {
+         build: {
+-            sourcemap: true,
++            sourcemap: false,
+         },
+@@
+     renderer: {
+         build: {
+             cssMinify: 'esbuild',
+             minify: 'esbuild',
++            rollupOptions: {
++                treeshake: true,
++            },
+             modulePreload: {
+                 polyfill: false,
+             },
+-            sourcemap: true,
++            sourcemap: false,
+             target: electronRendererTarget,
+         },

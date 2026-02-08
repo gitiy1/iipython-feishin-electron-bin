@@ -1,0 +1,7 @@
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@
+-        "react-icons": "^5.5.0",
++        "@react-icons/all-files": "^4.1.0",
++        "react-icons": "^5.5.0",
