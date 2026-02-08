@@ -1,4 +1,4 @@
-# Maintainer: iiPythonx
+# Maintainer: Ice Year
 _appname=feishin
 pkgname=iipython-feishin-electron-bin
 _pkgname=feishin
@@ -66,7 +66,6 @@ package() {
     install -Dm755 "${srcdir}/${pkgname%-bin}.sh" "${pkgdir}/usr/bin/${pkgname%-bin}"
     install -Dm644 "${srcdir}/app.asar" -t "${pkgdir}/usr/lib/${pkgname%-bin}"
     cp -Pr --no-preserve=ownership "${srcdir}/squashfs-root/resources/assets" "${pkgdir}/usr/lib/${pkgname%-bin}"
-    install -Dm644 "${srcdir}/squashfs-root/usr/lib/"* -t "${pkgdir}/usr/lib/${pkgname%-bin}/lib"
     _icon_sizes=(32x32 64x64 128x128 256x256 512x512 1024x1024)
     for _icons in "${_icon_sizes[@]}"; do
         install -Dm644 "${srcdir}/squashfs-root/resources/assets/icons/${_icons}.png" \

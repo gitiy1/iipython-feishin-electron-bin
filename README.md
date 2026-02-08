@@ -15,9 +15,10 @@ makepkg -si
 A GitHub Actions workflow is included to keep `PKGBUILD` and `.SRCINFO` in sync with the latest release from
 `iiPythonx/feishin`.
 
-- The scheduled cron trigger is **commented out** for now. You can enable it later by uncommenting the `schedule`
-  block in `.github/workflows/update-aur.yml`.
+- The scheduled cron trigger runs weekly (see `.github/workflows/update-aur.yml`).
 - If there is no new upstream release, the workflow exits quickly without rebuilding or creating releases.
+- If the package is not yet present on AUR, the workflow will still push the current build there for publishing.
+- The package installs `app.asar` and assets only to avoid bundling the upstream Electron runtime.
 
 If you prefer to update locally, edit `PKGBUILD` and regenerate `.SRCINFO` (or run the update script manually).
 
