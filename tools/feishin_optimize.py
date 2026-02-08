@@ -66,14 +66,24 @@ def update_remote_vite(path: Path) -> bool:
     return False
 
 
+def _resolve_react_icons_version(data: dict) -> str | None:
+    for section in ("dependencies", "devDependencies"):
+        deps = data.get(section, {})
+        if "react-icons" in deps:
+            return deps["react-icons"]
+    return None
+
+
 def update_package_json(path: Path) -> bool:
     data = json.loads(path.read_text(encoding="utf-8"))
     deps = data.get("dependencies", {})
     if "@react-icons/all-files" not in deps:
-        deps["@react-icons/all-files"] = "^4.1.0"
-        data["dependencies"] = deps
-        path.write_text(json.dumps(data, indent=4, sort_keys=True) + "\n", encoding="utf-8")
-        return True
+        react_icons_version = _resolve_react_icons_version(data)
+        if react_icons_version:
+            deps["@react-icons/all-files"] = react_icons_version
+            data["dependencies"] = deps
+            path.write_text(json.dumps(data, indent=4, sort_keys=True) + "\n", encoding="utf-8")
+            return True
     return False
 
 
