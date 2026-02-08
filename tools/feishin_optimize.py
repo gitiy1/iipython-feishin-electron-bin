@@ -57,10 +57,10 @@ def update_electron_vite(path: Path) -> bool:
             count=1,
         )
 
-    # Ensure main external includes x11.
+    # Ensure main external includes electron, source-map-support, and x11.
     content = re.sub(
         r"external:\s*\[(.*?)\]",
-        lambda m: _ensure_external_x11(m.group(0)),
+        lambda m: _ensure_external_list(m.group(0), ["electron", "source-map-support", "x11"]),
         content,
         count=1,
     )
@@ -71,11 +71,12 @@ def update_electron_vite(path: Path) -> bool:
     return False
 
 
-def _ensure_external_x11(external_line: str) -> str:
-    if "x11" in external_line:
+def _ensure_external_list(external_line: str, required: list[str]) -> str:
+    if not external_line.endswith("]"):
         return external_line
-    if external_line.endswith("]"):
-        return external_line[:-1] + ", 'x11']"
+    for name in required:
+        if name not in external_line:
+            external_line = external_line[:-1] + f", '{name}']"
     return external_line
 
 
@@ -230,7 +231,7 @@ def _force_remove_dependency(text: str, section: str, name: str) -> tuple[str, b
 
 
 def _remove_dependency_line(text: str, name: str) -> tuple[str, bool]:
-    pattern = rf"^\\s*\"{re.escape(name)}\"\\s*:\\s*\"[^\"]+\"\\s*,?\\s*\n"
+    pattern = rf"^\s*\"{re.escape(name)}\"\s*:\s*\"[^\"]+\"\s*,?\s*\n"
     updated, count = re.subn(pattern, "", text, flags=re.MULTILINE)
     return updated, count > 0
 
@@ -351,7 +352,7 @@ def _switch_vite_to_rolldown(text: str) -> tuple[str, bool]:
         return text, False
     updated = re.sub(
         r"\"vite\"\s*:\s*\"[^\"]+\"",
-        '"vite": "npm:rolldown-vite@7.2.2"',
+        '"vite": "npm:rolldown-vite@latest"',
         text,
         count=1,
     )
@@ -365,6 +366,71 @@ def update_react_icon_imports(root: Path, verbose: bool = False) -> int:
     for path in root.rglob("*.tsx"):
         count += _update_react_icon_file(path, verbose=verbose)
     return count
+
+
+IPC_IDEMPOTENCY_ALLOWLIST = [
+    r"^settings-get$",
+    r"^password-get$",
+    r"^password-set$",
+    r"^open-file-selector$",
+]
+
+
+def update_ipc_idempotency(root: Path, verbose: bool = False) -> int:
+    count = 0
+    for path in (root / "src" / "main").rglob("*.ts"):
+        count += _update_ipc_idempotency_file(path, verbose=verbose)
+    return count
+
+
+def _update_ipc_idempotency_file(path: Path, verbose: bool = False) -> int:
+    content = path.read_text(encoding="utf-8")
+    lines = content.splitlines()
+    updated_lines: list[str] = []
+    changed = False
+
+    handle_re = re.compile(r"^\s*ipcMain\.handle\(\s*(['\"])(?P<channel>[^'\"]+)\1")
+    on_re = re.compile(r"^\s*ipcMain\.on\(\s*(['\"])(?P<channel>[^'\"]+)\1")
+
+    for line in lines:
+        handle_match = handle_re.match(line)
+        on_match = on_re.match(line)
+        if handle_match:
+            channel = handle_match.group("channel")
+            if not _ipc_channel_allowed(channel):
+                updated_lines.append(line)
+                continue
+            if not _has_prior_guard(updated_lines, "ipcMain.removeHandler", channel):
+                updated_lines.append(f"ipcMain.removeHandler('{channel}');")
+                changed = True
+        elif on_match:
+            channel = on_match.group("channel")
+            if not _ipc_channel_allowed(channel):
+                updated_lines.append(line)
+                continue
+            if not _has_prior_guard(updated_lines, "ipcMain.removeAllListeners", channel):
+                updated_lines.append(f"ipcMain.removeAllListeners('{channel}');")
+                changed = True
+        updated_lines.append(line)
+
+    if changed:
+        path.write_text("\n".join(updated_lines) + "\n", encoding="utf-8")
+        if verbose:
+            print(f"ipcMain idempotency: {path}")
+        return 1
+    return 0
+
+
+def _has_prior_guard(lines: list[str], guard: str, channel: str) -> bool:
+    for idx in range(len(lines) - 1, -1, -1):
+        if lines[idx].strip() == "":
+            continue
+        return f"{guard}('{channel}')" in lines[idx]
+    return False
+
+
+def _ipc_channel_allowed(channel: str) -> bool:
+    return any(re.search(pattern, channel) for pattern in IPC_IDEMPOTENCY_ALLOWLIST)
 
 
 def _rewrite_react_icon_imports(content: str) -> str:
@@ -414,12 +480,14 @@ def main() -> int:
     remote_changed = update_remote_vite(root / "remote.vite.config.ts")
     pkg_changed = update_package_json(root / "package.json")
     icon_files_changed = update_react_icon_imports(root, verbose=args.verbose)
+    ipc_files_changed = update_ipc_idempotency(root, verbose=args.verbose)
 
     print("electron-builder.yml updated:", builder_changed)
     print("electron.vite.config.ts updated:", vite_changed)
     print("remote.vite.config.ts updated:", remote_changed)
     print("package.json updated:", pkg_changed)
     print("react-icons files updated:", icon_files_changed)
+    print("ipcMain idempotency files updated:", ipc_files_changed)
     return 0
 
 
