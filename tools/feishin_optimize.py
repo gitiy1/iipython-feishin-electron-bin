@@ -39,10 +39,12 @@ def update_electron_vite(path: Path) -> bool:
     content = path.read_text(encoding="utf-8")
     original = content
     content = re.sub(r"sourcemap: true", "sourcemap: false", content)
-    if "rollupOptions:" not in content:
-        content = content.replace(
-            "minify: 'esbuild',\n",
-            "minify: 'esbuild',\n            rollupOptions: {\n                treeshake: true,\n            },\n",
+    if "treeshake:" not in content:
+        content = re.sub(
+            r"(renderer:\s*{[\s\S]*?build:\s*{[\s\S]*?minify: 'esbuild',)",
+            r"\1\n            rollupOptions: {\n                treeshake: true,\n            },",
+            content,
+            count=1,
         )
     if content != original:
         path.write_text(content, encoding="utf-8")
