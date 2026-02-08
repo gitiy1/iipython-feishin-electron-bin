@@ -41,15 +41,15 @@ def download_file(url: str, dest: str) -> None:
         handle.write(resp.read())
 
 
-def detect_electron_major_deb(deb_path: str, binary_relpath: str) -> str:
+def detect_electron_major(appimage_path: str, appname: str) -> str:
+    os.chmod(appimage_path, 0o755)
     with tempfile.TemporaryDirectory() as workdir:
-        subprocess.run(["ar", "x", deb_path], cwd=workdir, check=True)
-        subprocess.run(["tar", "-xf", "data.tar.xz"], cwd=workdir, check=True)
-        binary_path = os.path.join(workdir, binary_relpath)
+        subprocess.run([appimage_path, "--appimage-extract"], cwd=workdir, check=True)
+        binary_path = os.path.join(workdir, "squashfs-root", appname)
         output = subprocess.check_output(["strings", binary_path], text=True)
     match = re.search(r"Chrome/[0-9.]* Electron/([0-9]+)", output)
     if not match:
-        raise RuntimeError("Unable to detect Electron major version from deb")
+        raise RuntimeError("Unable to detect Electron major version from AppImage")
     return match.group(1)
 
 
@@ -59,11 +59,8 @@ def main() -> int:
     current_pkgver = extract_var(pkgbuild, "pkgver")
     current_assetver = extract_var(pkgbuild, "_assetver")
     current_electron = extract_var(pkgbuild, "_electronversion")
-    sha_line = extract_var(pkgbuild, "sha256sums")
-    sha_values = re.findall(r"[0-9a-f]{64}", sha_line)
-    if len(sha_values) < 2:
-        raise RuntimeError("Unable to parse sha256sums for deb asset")
-    current_sha = sha_values[1]
+    current_appname = extract_var(pkgbuild, "_appname")
+    current_sha = extract_var(pkgbuild, "sha256sums_x86_64").strip("'()").split()[0]
 
     with urlopen(f"https://api.github.com/repos/{REPO}/releases/latest") as resp:
         data = json.load(resp)
@@ -71,11 +68,11 @@ def main() -> int:
     latest_tag = data["tag_name"]
     assets = data.get("assets", [])
     asset = next(
-        (item for item in assets if item.get("name", "").endswith("linux-amd64.deb")),
+        (item for item in assets if item.get("name", "").endswith("linux-x86_64.AppImage")),
         None,
     )
     if not asset:
-        raise RuntimeError("No linux-amd64.deb asset found in latest release")
+        raise RuntimeError("No linux-x86_64.AppImage asset found in latest release")
 
     asset_name = asset["name"]
     asset_url = asset["browser_download_url"]
@@ -87,12 +84,9 @@ def main() -> int:
     latest_assetver = asset_name.replace("feishin-", "").split("-linux-")[0]
     latest_pkgver = latest_tag.replace("-", "_")
     with tempfile.TemporaryDirectory() as workdir:
-        deb_path = os.path.join(workdir, asset_name)
-        download_file(asset_url, deb_path)
-        latest_electron = detect_electron_major_deb(
-            deb_path,
-            os.path.join("opt", "Feishin", "feishin"),
-        )
+        appimage_path = os.path.join(workdir, asset_name)
+        download_file(asset_url, appimage_path)
+        latest_electron = detect_electron_major(appimage_path, current_appname)
 
     if (
         latest_tag == current_tag
@@ -115,8 +109,8 @@ def main() -> int:
         flags=re.MULTILINE,
     )
     pkgbuild = re.sub(
-        r"^sha256sums=.*$",
-        f"sha256sums=('4497d4c2cfb24ca0665cbeabf377a6bc850a8cfd6dd17469b0dc937a9ed6bf65' '{latest_sha}')",
+        r"^sha256sums_x86_64=.*$",
+        f"sha256sums_x86_64=('{latest_sha}')",
         pkgbuild,
         flags=re.MULTILINE,
     )
@@ -137,19 +131,17 @@ def main() -> int:
         srcinfo,
         flags=re.MULTILINE,
     )
+    source_line = (
+        f"source_x86_64 = iipython-feishin-electron-{latest_pkgver}-x86_64.AppImage::"
+        f"https://github.com/{REPO}/releases/download/{latest_tag}/feishin-{latest_assetver}-linux-x86_64.AppImage"
+    )
+    srcinfo = re.sub(r"^source_x86_64 = .*$", source_line, srcinfo, flags=re.MULTILINE)
     srcinfo = re.sub(
-        r"^source = iipython-feishin-electron-.*-amd64.deb::.*$",
-        f"source = iipython-feishin-electron-{latest_pkgver}-amd64.deb::https://github.com/{REPO}/releases/download/{latest_tag}/feishin-{latest_assetver}-linux-amd64.deb",
+        r"^sha256sums_x86_64 = .*$",
+        f"sha256sums_x86_64 = {latest_sha}",
         srcinfo,
         flags=re.MULTILINE,
     )
-    srcinfo_lines = srcinfo.splitlines()
-    sha_indices = [idx for idx, line in enumerate(srcinfo_lines) if line.startswith("\tsha256sums = ")]
-    if len(sha_indices) >= 2:
-        srcinfo_lines[sha_indices[-1]] = f"\tsha256sums = {latest_sha}"
-    else:
-        raise RuntimeError("Unexpected .SRCINFO format for sha256sums")
-    srcinfo = "\n".join(srcinfo_lines) + "\n"
     write_text(SRCINFO_PATH, srcinfo)
 
     set_env("PKG_UPDATED", "1")
