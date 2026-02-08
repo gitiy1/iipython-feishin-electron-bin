@@ -1,0 +1,25 @@
+diff --git a/electron-builder.yml b/electron-builder.yml
+index 0a3e0aa..b2b7a23 100644
+--- a/electron-builder.yml
++++ b/electron-builder.yml
+@@ -8,9 +8,15 @@ files:
+     - 'out/**/*'
+     - 'package.json'
+ extraResources:
+     - assets/**
+-asarUnpack:
+-    - resources/**
++asarUnpack:
++    - resources/**/*.node
++    - resources/**/*.dll
++    - resources/**/*.so
++    - resources/**/*.dylib
+@@ -34,6 +40,7 @@ linux:
+     target:
+         - AppImage
+         - deb
+         - tar.xz
++    # consider dropping AppImage when size is a priority
+     category: AudioVideo;Audio;Player
+     icon: assets/icons/icon.png
+     artifactName: ${productName}-${os}-${arch}.${ext}
