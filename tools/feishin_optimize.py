@@ -179,12 +179,12 @@ def _rewrite_react_icon_imports(content: str) -> str:
                 continue
             if " as " in entry:
                 original, alias = [part.strip() for part in entry.split(" as ", 1)]
-                local = alias
+                spec = f"{original} as {alias}"
             else:
                 original = entry
-                local = entry
+                spec = original
             imports.append(
-                f"import {local} from \"@react-icons/all-files/{pack}/{original}\";"
+                f"import {{ {spec} }} from \"@react-icons/all-files/{pack}/{original}\";"
             )
         return "\n".join(imports)
 
