@@ -95,12 +95,12 @@ def update_package_json(path: Path) -> bool:
     return False
 
 
-def update_react_icon_imports(root: Path) -> int:
+def update_react_icon_imports(root: Path, verbose: bool = False) -> int:
     count = 0
     for path in root.rglob("*.ts"):
-        count += _update_react_icon_file(path)
+        count += _update_react_icon_file(path, verbose=verbose)
     for path in root.rglob("*.tsx"):
-        count += _update_react_icon_file(path)
+        count += _update_react_icon_file(path, verbose=verbose)
     return count
 
 
@@ -128,11 +128,13 @@ def _rewrite_react_icon_imports(content: str) -> str:
     return updated
 
 
-def _update_react_icon_file(path: Path) -> int:
+def _update_react_icon_file(path: Path, verbose: bool = False) -> int:
     content = path.read_text(encoding="utf-8")
     updated = _rewrite_react_icon_imports(content)
     if updated != content:
-        path.write_text(content, encoding="utf-8")
+        path.write_text(updated, encoding="utf-8")
+        if verbose:
+            print(f"react-icons rewrite: {path}")
         return 1
     return 0
 
@@ -140,6 +142,7 @@ def _update_react_icon_file(path: Path) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("source", type=Path, help="Path to the Feishin source root")
+    parser.add_argument("--verbose", action="store_true", help="Log each file rewritten")
     args = parser.parse_args()
 
     root = args.source
@@ -147,7 +150,7 @@ def main() -> int:
     vite_changed = update_electron_vite(root / "electron.vite.config.ts")
     remote_changed = update_remote_vite(root / "remote.vite.config.ts")
     pkg_changed = update_package_json(root / "package.json")
-    icon_files_changed = update_react_icon_imports(root)
+    icon_files_changed = update_react_icon_imports(root, verbose=args.verbose)
 
     print("electron-builder.yml updated:", builder_changed)
     print("electron.vite.config.ts updated:", vite_changed)
