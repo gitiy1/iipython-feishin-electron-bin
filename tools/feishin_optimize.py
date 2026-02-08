@@ -39,23 +39,54 @@ def update_electron_vite(path: Path) -> bool:
     content = path.read_text(encoding="utf-8")
     original = content
     content = re.sub(r"sourcemap: true", "sourcemap: false", content)
-    if "treeshake:" not in content:
+
+    # Switch to rolldownOptions and ensure renderer input + treeshake exist.
+    content = re.sub(r"rollupOptions", "rolldownOptions", content)
+    if "renderer:" in content and "rolldownOptions:" in content:
         content = re.sub(
-            r"(renderer:\s*{[\s\S]*?build:\s*{[\s\S]*?minify: 'esbuild',)",
-            r"\1\n            rollupOptions: {\n                treeshake: true,\n            },",
+            r"(renderer:\s*{[\s\S]*?build:\s*{[\s\S]*?minify: 'esbuild',)\s*\n\s*rolldownOptions:\s*{[\s\S]*?}\s*,",
+            r"\1\n            rolldownOptions: {\n                input: {\n                    index: resolve('src/renderer/index.html'),\n                },\n                treeshake: true,\n            },",
             content,
             count=1,
         )
+    if "treeshake:" not in content and "renderer:" in content:
+        content = re.sub(
+            r"(renderer:\s*{[\s\S]*?build:\s*{[\s\S]*?minify: 'esbuild',)",
+            r"\1\n            rolldownOptions: {\n                input: {\n                    index: resolve('src/renderer/index.html'),\n                },\n                treeshake: true,\n            },",
+            content,
+            count=1,
+        )
+
+    # Ensure main external includes x11.
+    content = re.sub(
+        r"external:\s*\[(.*?)\]",
+        lambda m: _ensure_external_x11(m.group(0)),
+        content,
+        count=1,
+    )
+
     if content != original:
         path.write_text(content, encoding="utf-8")
         return True
     return False
 
 
+def _ensure_external_x11(external_line: str) -> str:
+    if "x11" in external_line:
+        return external_line
+    if external_line.endswith("]"):
+        return external_line[:-1] + ", 'x11']"
+    return external_line
+
+
 def update_remote_vite(path: Path) -> bool:
     content = path.read_text(encoding="utf-8")
     original = content
     content = re.sub(r"sourcemap: true", "sourcemap: false", content)
+
+    # Switch to rolldownOptions for Vite 7.x usage.
+    content = re.sub(r"rollupOptions", "rolldownOptions", content)
+
     if content != original:
         path.write_text(content, encoding="utf-8")
         return True
@@ -167,11 +198,64 @@ def _remove_dependency(text: str, section: str, name: str) -> tuple[str, bool]:
     return text, False
 
 
+def _force_remove_dependency(text: str, section: str, name: str) -> tuple[str, bool]:
+    pattern = rf"(\"{re.escape(section)}\"\\s*:\\s*{{)(?P<body>.*?)(\\s*}})"
+    match = re.search(pattern, text, flags=re.DOTALL)
+    if not match:
+        return text, False
+
+    body = match.group("body")
+    lines = body.splitlines()
+    removed = False
+    new_lines = []
+    entry_pattern = re.compile(rf"\\s*\"{re.escape(name)}\"\\s*:")
+
+    for line in lines:
+        if entry_pattern.match(line):
+            removed = True
+            continue
+        new_lines.append(line)
+
+    if not removed:
+        return text, False
+
+    for i in range(len(new_lines) - 1, -1, -1):
+        if new_lines[i].strip():
+            new_lines[i] = re.sub(r",\\s*$", "", new_lines[i])
+            break
+
+    new_body = "\n".join(new_lines)
+    updated = text[: match.start("body")] + new_body + text[match.end("body") :]
+    return updated, True
+
+
+def _remove_dependency_line(text: str, name: str) -> tuple[str, bool]:
+    pattern = rf"^\\s*\"{re.escape(name)}\"\\s*:\\s*\"[^\"]+\"\\s*,?\\s*\n"
+    updated, count = re.subn(pattern, "", text, flags=re.MULTILINE)
+    return updated, count > 0
+
+
+def _fix_section_last_comma(text: str, section: str) -> str:
+    pattern = rf"(\"{re.escape(section)}\"\s*:\s*{{)(?P<body>.*?)(\n\s*}})"
+    match = re.search(pattern, text, flags=re.DOTALL)
+    if not match:
+        return text
+    body_lines = match.group("body").splitlines()
+    for i in range(len(body_lines) - 1, -1, -1):
+        if body_lines[i].strip():
+            body_lines[i] = re.sub(r",\s*$", "", body_lines[i])
+            break
+    new_body = "\n".join(body_lines)
+    return text[: match.start("body")] + new_body + text[match.end("body") :]
+
+
 def update_package_json(path: Path) -> bool:
     raw = path.read_text(encoding="utf-8")
     data = json.loads(raw)
     deps = data.get("dependencies", {})
-    has_all_files = "@react-icons/all-files" in deps
+    dev_deps = data.get("devDependencies", {})
+    has_all_files_dep = "@react-icons/all-files" in deps
+    has_all_files_dev = "@react-icons/all-files" in dev_deps
     react_icons_version = _resolve_react_icons_version(data)
     desired_version = None
     if react_icons_version:
@@ -181,22 +265,97 @@ def update_package_json(path: Path) -> bool:
                 "https://github.com/react-icons/react-icons/releases/download/"
                 f"v{semver}/react-icons-all-files-{semver}.tgz"
             )
-    if not has_all_files and not desired_version:
-        return False
+
     updated = raw
     changed = False
-    if not has_all_files:
-        updated, inserted = _insert_dependency(
+
+    # Move @react-icons/all-files to devDependencies.
+    if has_all_files_dep:
+        updated, removed_dep = _remove_dependency(updated, "dependencies", "@react-icons/all-files")
+        changed = changed or removed_dep
+    if not has_all_files_dev and desired_version:
+        updated, inserted = _insert_dev_dependency(
             updated, "@react-icons/all-files", desired_version
         )
         changed = changed or inserted
+
+    # Remove react-icons from both dependencies and devDependencies.
     updated, removed_deps = _remove_dependency(updated, "dependencies", "react-icons")
     changed = changed or removed_deps
     updated, removed_dev = _remove_dependency(updated, "devDependencies", "react-icons")
     changed = changed or removed_dev
+    updated, forced_deps = _force_remove_dependency(updated, "dependencies", "react-icons")
+    changed = changed or forced_deps
+    updated, forced_dev = _force_remove_dependency(updated, "devDependencies", "react-icons")
+    changed = changed or forced_dev
+    updated, removed_anywhere = _remove_dependency_line(updated, "react-icons")
+    changed = changed or removed_anywhere
+    if removed_anywhere:
+        updated = _fix_section_last_comma(updated, "dependencies")
+        updated = _fix_section_last_comma(updated, "devDependencies")
+
+    # Switch to rolldown-vite when vite is 7.x.
+    updated, switched_vite = _switch_vite_to_rolldown(updated)
+    changed = changed or switched_vite
+
     if changed:
         path.write_text(updated, encoding="utf-8")
     return changed
+
+
+def _insert_dev_dependency(text: str, name: str, version: str | None = None) -> tuple[str, bool]:
+    match = re.search(r"\"devDependencies\"\s*:\s*{", text)
+    if not match:
+        return text, False
+    object_start = text.find("{", match.end() - 1)
+    if object_start == -1:
+        return text, False
+    object_end = _find_object_end(text, object_start)
+    if object_end is None:
+        return text, False
+
+    before = text[:object_start + 1]
+    body = text[object_start + 1 : object_end]
+    after = text[object_end:]
+
+    dep_line_match = re.search(r"\n(\s*)\"devDependencies\"", text[:object_start])
+    base_indent = dep_line_match.group(1) if dep_line_match else ""
+    entry_indent_match = re.search(r"\n(\s*)\"[^\"]+\"\s*:", body)
+    if entry_indent_match:
+        item_indent = entry_indent_match.group(1)
+    else:
+        item_indent = base_indent + "  "
+
+    if version is None:
+        version = "*"
+
+    body_stripped = body.strip()
+    if body_stripped:
+        needs_comma = not body_stripped.rstrip().endswith(",")
+        separator = "," if needs_comma else ""
+        insertion = f"{separator}\n{item_indent}\"{name}\": \"{version}\""
+        new_body = body.rstrip() + insertion + "\n" + base_indent
+    else:
+        new_body = f"\n{item_indent}\"{name}\": \"{version}\"\n{base_indent}"
+    return before + new_body + after, True
+
+
+def _switch_vite_to_rolldown(text: str) -> tuple[str, bool]:
+    match = re.search(
+        r"\"devDependencies\"\s*:\s*{[\s\S]*?\"vite\"\s*:\s*\"(?P<version>[^\"]+)\"",
+        text,
+    )
+    if not match:
+        return text, False
+    if not re.match(r"^\^?7\.", match.group("version")):
+        return text, False
+    updated = re.sub(
+        r"\"vite\"\s*:\s*\"[^\"]+\"",
+        '"vite": "npm:rolldown-vite@7.2.2"',
+        text,
+        count=1,
+    )
+    return updated, updated != text
 
 
 def update_react_icon_imports(root: Path, verbose: bool = False) -> int:
