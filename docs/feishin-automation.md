@@ -7,6 +7,7 @@ This guide shows how to apply the size-optimization edits using a script instead
 `tools/feishin_optimize.py` updates the upstream source tree to:
 
 - disable production sourcemaps
+- disable remote build sourcemaps (remote.vite.config.ts)
 - narrow `asarUnpack` patterns
 - enable renderer tree-shaking
 - add `@react-icons/all-files`
@@ -28,3 +29,8 @@ pnpm run build
 ```
 
 Then compare output sizes to the baseline build.
+
+## Notes
+
+- The React Icons rewrite targets known import locations. If upstream adds new icon imports, re-run the script and
+  extend `REACT_ICON_FILES`/`REACT_ICON_MAP` as needed.

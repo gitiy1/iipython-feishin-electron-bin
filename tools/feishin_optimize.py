@@ -60,6 +60,16 @@ def update_electron_vite(path: Path) -> bool:
     return False
 
 
+def update_remote_vite(path: Path) -> bool:
+    content = path.read_text(encoding="utf-8")
+    original = content
+    content = re.sub(r"sourcemap: true", "sourcemap: false", content)
+    if content != original:
+        path.write_text(content, encoding="utf-8")
+        return True
+    return False
+
+
 def update_package_json(path: Path) -> bool:
     data = json.loads(path.read_text(encoding="utf-8"))
     deps = data.get("dependencies", {})
@@ -95,11 +105,13 @@ def main() -> int:
     root = args.source
     builder_changed = update_electron_builder(root / "electron-builder.yml")
     vite_changed = update_electron_vite(root / "electron.vite.config.ts")
+    remote_changed = update_remote_vite(root / "remote.vite.config.ts")
     pkg_changed = update_package_json(root / "package.json")
     icons_changed = update_react_icon_imports(root)
 
     print("electron-builder.yml updated:", builder_changed)
     print("electron.vite.config.ts updated:", vite_changed)
+    print("remote.vite.config.ts updated:", remote_changed)
     print("package.json updated:", pkg_changed)
     print("react-icons imports updated:", icons_changed)
     return 0
