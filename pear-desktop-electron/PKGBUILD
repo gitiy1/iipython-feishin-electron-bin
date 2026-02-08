@@ -61,7 +61,10 @@ prepare() {
 package() {
     install -Dm755 "${srcdir}/${pkgname%-bin}.sh" "${pkgdir}/usr/bin/${pkgname%-bin}"
     install -Dm644 "${srcdir}/app.asar" -t "${pkgdir}/usr/lib/${pkgname%-bin}"
-    cp -Pr --no-preserve=ownership "${srcdir}/opt/YouTube Music"/* "${pkgdir}/usr/lib/${pkgname%-bin}"
+    if [[ -d "${srcdir}/opt/YouTube Music/resources/assets" ]]; then
+        cp -Pr --no-preserve=ownership "${srcdir}/opt/YouTube Music/resources/assets" \
+            "${pkgdir}/usr/lib/${pkgname%-bin}/assets"
+    fi
     install -Dm644 "${srcdir}/usr/share/applications/youtube-music.desktop" "${pkgdir}/usr/share/applications/${pkgname%-bin}.desktop"
 
     _icon_sizes=(16x16 24x24 32x32 48x48 64x64 128x128 256x256 512x512)
