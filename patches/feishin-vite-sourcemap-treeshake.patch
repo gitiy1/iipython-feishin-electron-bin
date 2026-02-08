@@ -1,9 +1,7 @@
 diff --git a/electron.vite.config.ts b/electron.vite.config.ts
-index d6b0f9e..a6a0b6b 100644
 --- a/electron.vite.config.ts
 +++ b/electron.vite.config.ts
-@@ -15,6 +15,7 @@ const electronRendererTarget = 'chrome87';
- const config: UserConfig = {
+@@
      main: {
          build: {
              rollupOptions: {
@@ -12,13 +10,13 @@ index d6b0f9e..a6a0b6b 100644
 -            sourcemap: true,
 +            sourcemap: false,
          },
-@@ -31,7 +32,7 @@ const config: UserConfig = {
+@@
      preload: {
          build: {
 -            sourcemap: true,
 +            sourcemap: false,
          },
-@@ -45,13 +46,17 @@ const config: UserConfig = {
+@@
      renderer: {
          build: {
              cssMinify: 'esbuild',

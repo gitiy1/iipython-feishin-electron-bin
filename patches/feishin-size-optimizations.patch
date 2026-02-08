@@ -1,8 +1,8 @@
 diff --git a/electron-builder.yml b/electron-builder.yml
-index 0a3e0aa..b2b7a23 100644
 --- a/electron-builder.yml
 +++ b/electron-builder.yml
-@@ -8,9 +8,15 @@ files:
+@@
+ files:
      - 'out/**/*'
      - 'package.json'
  extraResources:
@@ -14,7 +14,8 @@ index 0a3e0aa..b2b7a23 100644
 +    - resources/**/*.dll
 +    - resources/**/*.so
 +    - resources/**/*.dylib
-@@ -34,6 +40,7 @@ linux:
+@@
+ linux:
      target:
          - AppImage
          - deb
