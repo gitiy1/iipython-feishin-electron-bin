@@ -135,12 +135,41 @@ def _insert_dependency(text: str, name: str, version: str) -> tuple[str, bool]:
     return before + new_body + after, True
 
 
+def _remove_dependency(text: str, section: str, name: str) -> tuple[str, bool]:
+    pattern = rf"(\"{re.escape(section)}\"\\s*:\\s*{{)(?P<body>.*?)(\\s*}})"
+    match = re.search(pattern, text, flags=re.DOTALL)
+    if not match:
+        return text, False
+
+    body = match.group("body")
+    lines = body.splitlines()
+    removed = False
+    new_lines = []
+    entry_pattern = re.compile(rf"\\s*\"{re.escape(name)}\"\\s*:")
+
+    for line in lines:
+        if entry_pattern.match(line):
+            removed = True
+            continue
+        new_lines.append(line)
+
+    if removed:
+        for i in range(len(new_lines) - 1, -1, -1):
+            if new_lines[i].strip():
+                new_lines[i] = re.sub(r",\\s*$", "", new_lines[i])
+                break
+        new_body = "\n".join(new_lines)
+        updated = text[: match.start("body")] + new_body + text[match.end("body") :]
+        return updated, True
+
+    return text, False
+
+
 def update_package_json(path: Path) -> bool:
     raw = path.read_text(encoding="utf-8")
     data = json.loads(raw)
     deps = data.get("dependencies", {})
-    if "@react-icons/all-files" in deps:
-        return False
+    has_all_files = "@react-icons/all-files" in deps
     react_icons_version = _resolve_react_icons_version(data)
     desired_version = None
     if react_icons_version:
@@ -150,13 +179,22 @@ def update_package_json(path: Path) -> bool:
                 "https://github.com/react-icons/react-icons/releases/download/"
                 f"v{semver}/react-icons-all-files-{semver}.tgz"
             )
-    if not desired_version:
+    if not has_all_files and not desired_version:
         return False
-    updated, changed = _insert_dependency(raw, "@react-icons/all-files", desired_version)
+    updated = raw
+    changed = False
+    if not has_all_files:
+        updated, inserted = _insert_dependency(
+            updated, "@react-icons/all-files", desired_version
+        )
+        changed = changed or inserted
+    updated, removed_deps = _remove_dependency(updated, "dependencies", "react-icons")
+    changed = changed or removed_deps
+    updated, removed_dev = _remove_dependency(updated, "devDependencies", "react-icons")
+    changed = changed or removed_dev
     if changed:
         path.write_text(updated, encoding="utf-8")
-        return True
-    return False
+    return changed
 
 
 def update_react_icon_imports(root: Path, verbose: bool = False) -> int:
