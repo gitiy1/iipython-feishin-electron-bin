@@ -69,6 +69,13 @@ def _resolve_react_icons_version(data: dict) -> str | None:
     return None
 
 
+def _extract_semver(version: str) -> str | None:
+    match = re.search(r"\d+\.\d+\.\d+", version)
+    if match:
+        return match.group(0)
+    return None
+
+
 def _fetch_latest_react_icons_all_files() -> str | None:
     url = "https://registry.npmjs.org/@react-icons/all-files"
     try:
@@ -144,7 +151,15 @@ def update_package_json(path: Path) -> bool:
     deps = data.get("dependencies", {})
     if "@react-icons/all-files" in deps:
         return False
-    desired_version = _fetch_latest_react_icons_all_files() or _resolve_react_icons_version(data)
+    react_icons_version = _resolve_react_icons_version(data)
+    desired_version = _fetch_latest_react_icons_all_files()
+    if not desired_version and react_icons_version:
+        semver = _extract_semver(react_icons_version)
+        if semver:
+            desired_version = (
+                "https://github.com/react-icons/react-icons/releases/download/"
+                f"v{semver}/react-icons-all-files-{semver}.tgz"
+            )
     if not desired_version:
         return False
     updated, changed = _insert_dependency(raw, "@react-icons/all-files", desired_version)
