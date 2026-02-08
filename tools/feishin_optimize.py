@@ -11,16 +11,10 @@ import json
 import re
 from pathlib import Path
 
-REACT_ICON_MAP = {
-    "react-icons/ri": "@react-icons/all-files/ri",
-    "react-icons/ci": "@react-icons/all-files/ci",
-    "react-icons/fa": "@react-icons/all-files/fa",
-    "react-icons/lu": "@react-icons/all-files/lu",
-    "react-icons/md": "@react-icons/all-files/md",
-    "react-icons/pi": "@react-icons/all-files/pi",
-    "react-icons/si": "@react-icons/all-files/si",
-    "react-icons/cg": "@react-icons/all-files/cg",
-}
+REACT_ICON_IMPORT_RE = re.compile(
+    r"^import\s*{\s*(?P<names>[^}]+)\s*}\s*from\s*['\"](?P<module>react-icons/(?P<pack>[^'\"]+))['\"];?\s*$",
+    re.MULTILINE,
+)
 
 
 def update_electron_builder(path: Path) -> bool:
@@ -96,12 +90,34 @@ def update_react_icon_imports(root: Path) -> int:
     return count
 
 
+def _rewrite_react_icon_imports(content: str) -> str:
+    def replacer(match: re.Match[str]) -> str:
+        pack = match.group("pack")
+        names = match.group("names")
+        imports = []
+        for entry in names.split(","):
+            entry = entry.strip()
+            if not entry:
+                continue
+            if " as " in entry:
+                original, alias = [part.strip() for part in entry.split(" as ", 1)]
+                local = alias
+            else:
+                original = entry
+                local = entry
+            imports.append(
+                f"import {local} from \"@react-icons/all-files/{pack}/{original}\";"
+            )
+        return "\n".join(imports)
+
+    updated = REACT_ICON_IMPORT_RE.sub(replacer, content)
+    return updated
+
+
 def _update_react_icon_file(path: Path) -> int:
     content = path.read_text(encoding="utf-8")
-    original = content
-    for old, new in REACT_ICON_MAP.items():
-        content = content.replace(old, new)
-    if content != original:
+    updated = _rewrite_react_icon_imports(content)
+    if updated != content:
         path.write_text(content, encoding="utf-8")
         return 1
     return 0
