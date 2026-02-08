@@ -9,7 +9,6 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import urllib.request
 from pathlib import Path
 
 REACT_ICON_IMPORT_RE = re.compile(
@@ -76,19 +75,6 @@ def _extract_semver(version: str) -> str | None:
     return None
 
 
-def _fetch_latest_react_icons_all_files() -> str | None:
-    url = "https://registry.npmjs.org/@react-icons/all-files"
-    try:
-        with urllib.request.urlopen(url, timeout=10) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except Exception:
-        return None
-    version = payload.get("dist-tags", {}).get("latest")
-    if version:
-        return f"^{version}"
-    return None
-
-
 def _find_object_end(text: str, start: int) -> int | None:
     depth = 0
     in_string = False
@@ -132,7 +118,11 @@ def _insert_dependency(text: str, name: str, version: str) -> tuple[str, bool]:
 
     dep_line_match = re.search(r"\n(\s*)\"dependencies\"", text[:object_start])
     base_indent = dep_line_match.group(1) if dep_line_match else ""
-    item_indent = base_indent + "  "
+    entry_indent_match = re.search(r"\n(\s*)\"[^\"]+\"\s*:", body)
+    if entry_indent_match:
+        item_indent = entry_indent_match.group(1)
+    else:
+        item_indent = base_indent + "  "
 
     body_stripped = body.strip()
     if body_stripped:
@@ -152,8 +142,8 @@ def update_package_json(path: Path) -> bool:
     if "@react-icons/all-files" in deps:
         return False
     react_icons_version = _resolve_react_icons_version(data)
-    desired_version = _fetch_latest_react_icons_all_files()
-    if not desired_version and react_icons_version:
+    desired_version = None
+    if react_icons_version:
         semver = _extract_semver(react_icons_version)
         if semver:
             desired_version = (
