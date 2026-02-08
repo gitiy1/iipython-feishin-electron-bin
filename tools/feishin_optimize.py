@@ -9,10 +9,11 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import urllib.request
 from pathlib import Path
 
 REACT_ICON_IMPORT_RE = re.compile(
-    r"^import\s*{\s*(?P<names>[^}]+)\s*}\s*from\s*['\"](?P<module>react-icons/(?P<pack>[^'\"]+))['\"];?\s*$",
+    r"^import\s+(?:type\s+)?{\s*(?P<names>[^}]+)\s*}\s*from\s*['\"]react-icons/(?P<pack>[^'\"/]+)['\"];?\s*(?:\/\/.*)?$",
     re.MULTILINE,
 )
 
@@ -68,13 +69,26 @@ def _resolve_react_icons_version(data: dict) -> str | None:
     return None
 
 
+def _fetch_latest_react_icons_all_files() -> str | None:
+    url = "https://registry.npmjs.org/@react-icons/all-files"
+    try:
+        with urllib.request.urlopen(url, timeout=10) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except Exception:
+        return None
+    version = payload.get("dist-tags", {}).get("latest")
+    if version:
+        return f"^{version}"
+    return None
+
+
 def update_package_json(path: Path) -> bool:
     data = json.loads(path.read_text(encoding="utf-8"))
     deps = data.get("dependencies", {})
     if "@react-icons/all-files" not in deps:
-        react_icons_version = _resolve_react_icons_version(data)
-        if react_icons_version:
-            deps["@react-icons/all-files"] = react_icons_version
+        desired_version = _fetch_latest_react_icons_all_files() or _resolve_react_icons_version(data)
+        if desired_version:
+            deps["@react-icons/all-files"] = desired_version
             data["dependencies"] = deps
             path.write_text(json.dumps(data, indent=4, sort_keys=True) + "\n", encoding="utf-8")
             return True
