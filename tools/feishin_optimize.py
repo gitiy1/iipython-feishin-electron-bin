@@ -22,24 +22,19 @@ REACT_ICON_MAP = {
     "react-icons/cg": "@react-icons/all-files/cg",
 }
 
-REACT_ICON_FILES = [
-    "src/renderer/features/sidebar/components/sidebar-icon.tsx",
-    "src/renderer/features/window-controls/components/window-controls.tsx",
-    "src/renderer/layouts/window-bar.tsx",
-    "src/remote/components/remote-container.tsx",
-    "src/remote/components/buttons/image-button.tsx",
-    "src/remote/components/buttons/reconnect-button.tsx",
-    "src/shared/components/icon/icon.tsx",
-    "src/shared/components/spinner/spinner.tsx",
-]
-
 
 def update_electron_builder(path: Path) -> bool:
     content = path.read_text(encoding="utf-8")
     original = content
-    content = content.replace("asarUnpack:\n    - resources/**\n", "asarUnpack:\n    - resources/**/*.node\n    - resources/**/*.dll\n    - resources/**/*.so\n    - resources/**/*.dylib\n")
+    content = content.replace(
+        "asarUnpack:\n    - resources/**\n",
+        "asarUnpack:\n    - resources/**/*.node\n    - resources/**/*.dll\n    - resources/**/*.so\n    - resources/**/*.dylib\n",
+    )
     if "# consider dropping AppImage" not in content:
-        content = content.replace("- tar.xz\n", "- tar.xz\n    # consider dropping AppImage when size is a priority\n")
+        content = content.replace(
+            "- tar.xz\n",
+            "- tar.xz\n    # consider dropping AppImage when size is a priority\n",
+        )
     if content != original:
         path.write_text(content, encoding="utf-8")
         return True
@@ -52,7 +47,8 @@ def update_electron_vite(path: Path) -> bool:
     content = re.sub(r"sourcemap: true", "sourcemap: false", content)
     if "rollupOptions:" not in content:
         content = content.replace(
-            "minify: 'esbuild',\n", "minify: 'esbuild',\n            rollupOptions: {\n                treeshake: true,\n            },\n"
+            "minify: 'esbuild',\n",
+            "minify: 'esbuild',\n            rollupOptions: {\n                treeshake: true,\n            },\n",
         )
     if content != original:
         path.write_text(content, encoding="utf-8")
@@ -81,20 +77,24 @@ def update_package_json(path: Path) -> bool:
     return False
 
 
-def update_react_icon_imports(root: Path) -> bool:
-    changed = False
-    for relpath in REACT_ICON_FILES:
-        file_path = root / relpath
-        if not file_path.exists():
-            continue
-        content = file_path.read_text(encoding="utf-8")
-        original = content
-        for old, new in REACT_ICON_MAP.items():
-            content = content.replace(old, new)
-        if content != original:
-            file_path.write_text(content, encoding="utf-8")
-            changed = True
-    return changed
+def update_react_icon_imports(root: Path) -> int:
+    count = 0
+    for path in root.rglob("*.ts"):
+        count += _update_react_icon_file(path)
+    for path in root.rglob("*.tsx"):
+        count += _update_react_icon_file(path)
+    return count
+
+
+def _update_react_icon_file(path: Path) -> int:
+    content = path.read_text(encoding="utf-8")
+    original = content
+    for old, new in REACT_ICON_MAP.items():
+        content = content.replace(old, new)
+    if content != original:
+        path.write_text(content, encoding="utf-8")
+        return 1
+    return 0
 
 
 def main() -> int:
@@ -107,13 +107,13 @@ def main() -> int:
     vite_changed = update_electron_vite(root / "electron.vite.config.ts")
     remote_changed = update_remote_vite(root / "remote.vite.config.ts")
     pkg_changed = update_package_json(root / "package.json")
-    icons_changed = update_react_icon_imports(root)
+    icon_files_changed = update_react_icon_imports(root)
 
     print("electron-builder.yml updated:", builder_changed)
     print("electron.vite.config.ts updated:", vite_changed)
     print("remote.vite.config.ts updated:", remote_changed)
     print("package.json updated:", pkg_changed)
-    print("react-icons imports updated:", icons_changed)
+    print("react-icons files updated:", icon_files_changed)
     return 0
 
 
