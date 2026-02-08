@@ -1,0 +1,77 @@
+# Maintainer: iceyear
+_appname=pear-desktop
+pkgname=pear-desktop-electron-bin
+_pkgname=YouTube-Music
+pkgver=3.11.0
+_electronversion=38
+pkgrel=1
+pkgdesc="Pear Desktop (YouTube Music) with system-wide Electron"
+arch=('x86_64')
+url="https://github.com/pear-devs/pear-desktop"
+license=('MIT')
+provides=("${_appname}=${pkgver}")
+conflicts=(
+    "${_appname}"
+    "${_appname}-bin"
+)
+depends=(
+    "electron${_electronversion}"
+)
+makedepends=(
+    'asar'
+)
+source=(
+    "${pkgname%-bin}.sh"
+    "${pkgname%-bin}-${pkgver}-amd64.deb::${url}/releases/download/v${pkgver}/youtube-music_${pkgver}_amd64.deb"
+)
+sha256sums=(
+    'e08b8699c47bfa38365f7194d2dce675b3f36ef36235be993579db8647a8b307'
+    'db20c40bdcc558aaa85d6d5c20a3ec1e32795fcd6ffaa7e4f99757004736face'
+)
+
+_get_electron_version() {
+    _elec_ver="$(strings "${srcdir}/opt/YouTube Music/youtube-music" | grep '^Chrome/[0-9.]* Electron/[0-9]' | cut -d'/' -f3 | cut -d'.' -f1)"
+    echo -e "The electron version is: \033[1;31m${_elec_ver}\033[0m"
+}
+
+prepare() {
+    sed -i -e "
+        s/@electronversion@/${_electronversion}/g
+        s/@appname@/${pkgname%-bin}/g
+        s/@runname@/app.asar/g
+        s/@cfgdirname@/${_appname}/g
+        s/@options@/env ELECTRON_OZONE_PLATFORM_HINT=auto/g
+    " "${srcdir}/${pkgname%-bin}.sh"
+
+    ar x "${srcdir}/${pkgname%-bin}-${pkgver}-amd64.deb"
+    bsdtar -xf data.tar.xz
+
+    _get_electron_version
+
+    sed -i -e "
+        s|Exec=.*|Exec=${pkgname%-bin} %U|g
+        s|Icon=.*|Icon=${pkgname%-bin}|g
+    " "${srcdir}/usr/share/applications/youtube-music.desktop"
+
+    asar e "${srcdir}/opt/YouTube Music/resources/app.asar" "${srcdir}/app.asar.unpacked"
+    find "${srcdir}/app.asar.unpacked" -type f -exec sed -i "s/process.resourcesPath/'\/usr\/lib\/${pkgname%-bin}'/g" {} +
+    asar p "${srcdir}/app.asar.unpacked" "${srcdir}/app.asar"
+}
+
+package() {
+    install -Dm755 "${srcdir}/${pkgname%-bin}.sh" "${pkgdir}/usr/bin/${pkgname%-bin}"
+    install -Dm644 "${srcdir}/app.asar" -t "${pkgdir}/usr/lib/${pkgname%-bin}"
+    if [[ -d "${srcdir}/opt/YouTube Music/resources/assets" ]]; then
+        cp -Pr --no-preserve=ownership "${srcdir}/opt/YouTube Music/resources/assets" \
+            "${pkgdir}/usr/lib/${pkgname%-bin}/assets"
+    fi
+    install -Dm644 "${srcdir}/usr/share/applications/youtube-music.desktop" "${pkgdir}/usr/share/applications/${pkgname%-bin}.desktop"
+
+    _icon_sizes=(16x16 24x24 32x32 48x48 64x64 128x128 256x256 512x512)
+    for _icons in "${_icon_sizes[@]}"; do
+        if [[ -f "${srcdir}/usr/share/icons/hicolor/${_icons}/apps/youtube-music.png" ]]; then
+            install -Dm644 "${srcdir}/usr/share/icons/hicolor/${_icons}/apps/youtube-music.png" \
+                "${pkgdir}/usr/share/icons/hicolor/${_icons}/apps/${pkgname%-bin}.png"
+        fi
+    done
+}
