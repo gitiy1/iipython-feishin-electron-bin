@@ -82,16 +82,75 @@ def _fetch_latest_react_icons_all_files() -> str | None:
     return None
 
 
+def _find_object_end(text: str, start: int) -> int | None:
+    depth = 0
+    in_string = False
+    escape = False
+    for idx in range(start, len(text)):
+        char = text[idx]
+        if in_string:
+            if escape:
+                escape = False
+            elif char == "\\":
+                escape = True
+            elif char == "\"":
+                in_string = False
+            continue
+        if char == "\"":
+            in_string = True
+            continue
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return idx
+    return None
+
+
+def _insert_dependency(text: str, name: str, version: str) -> tuple[str, bool]:
+    match = re.search(r"\"dependencies\"\s*:\s*{", text)
+    if not match:
+        return text, False
+    object_start = text.find("{", match.end() - 1)
+    if object_start == -1:
+        return text, False
+    object_end = _find_object_end(text, object_start)
+    if object_end is None:
+        return text, False
+
+    before = text[:object_start + 1]
+    body = text[object_start + 1 : object_end]
+    after = text[object_end:]
+
+    dep_line_match = re.search(r"\n(\s*)\"dependencies\"", text[:object_start])
+    base_indent = dep_line_match.group(1) if dep_line_match else ""
+    item_indent = base_indent + "  "
+
+    body_stripped = body.strip()
+    if body_stripped:
+        needs_comma = not body_stripped.rstrip().endswith(",")
+        separator = "," if needs_comma else ""
+        insertion = f"{separator}\n{item_indent}\"{name}\": \"{version}\""
+        new_body = body.rstrip() + insertion + "\n" + base_indent
+    else:
+        new_body = f"\n{item_indent}\"{name}\": \"{version}\"\n{base_indent}"
+    return before + new_body + after, True
+
+
 def update_package_json(path: Path) -> bool:
-    data = json.loads(path.read_text(encoding="utf-8"))
+    raw = path.read_text(encoding="utf-8")
+    data = json.loads(raw)
     deps = data.get("dependencies", {})
-    if "@react-icons/all-files" not in deps:
-        desired_version = _fetch_latest_react_icons_all_files() or _resolve_react_icons_version(data)
-        if desired_version:
-            deps["@react-icons/all-files"] = desired_version
-            data["dependencies"] = deps
-            path.write_text(json.dumps(data, indent=4, sort_keys=True) + "\n", encoding="utf-8")
-            return True
+    if "@react-icons/all-files" in deps:
+        return False
+    desired_version = _fetch_latest_react_icons_all_files() or _resolve_react_icons_version(data)
+    if not desired_version:
+        return False
+    updated, changed = _insert_dependency(raw, "@react-icons/all-files", desired_version)
+    if changed:
+        path.write_text(updated, encoding="utf-8")
+        return True
     return False
 
 
